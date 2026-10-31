@@ -1,0 +1,38 @@
+name: Auto Ore Village 24/7
+
+on:
+  schedule:
+    - cron: '0 */4 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: orevillage-run
+  cancel-in-progress: true
+
+jobs:
+  run-orevillage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "Set up Python"
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: "Install dependencies"
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests telethon colorama
+
+      - name: "Chay Bot Ore Village 24/7"
+        env:
+          PYTHONUNBUFFERED: "1"
+          GITHUB_ACTIONS: "true"
+          MAX_RUNTIME_SECONDS: "14400"
+          TELEGRAM_STRING_SESSION: ${{ secrets.TELEGRAM_STRING_SESSION || secrets.TELEGRAM_STRING_SESSION_ACC1 || secrets.TELEGRAM_SESSION_B64_ACC1 || secrets.TELEGRAM_SESSION_B64 }}
+        run: |
+          python auto_orevillage.py
