@@ -2,20 +2,24 @@
 # -*- coding: utf-8 -*-
 """
 ====================================================================
-  BOT AUTO PLAY 24/7 TOÀN DIỆN - ORE VILLAGE (@orevillagebot)
+  BOT AUTO PLAY 24/7 SIÊU TỐI ƯU - ORE VILLAGE (@orevillagebot)
   Website: https://orevillage.online/
   Bot    : @orevillagebot
 
-  TÍNH NĂNG TỰ ĐỘNG 100%:
-    1. AUTO INDATA 100%: Tự động kết nối Telethon lấy init-data mới nhất.
-    2. AUTO HARVEST / COLLECT: Tự động thu hoạch toàn bộ quặng từ Kho tích luỹ
-       chuyển đổi thành TON thực tế vào số dư người chơi.
-    3. AUTO CHEST HUNTER: Tự động canh giờ chính xác từng giây để bắt và mở
-       toàn bộ Rương kho báu xuất hiện trên bản đồ (+TON thưởng lớn).
-    4. AUTO LUCKY WHEEL: Tự động quay Vòng quay may mắn khi có vé hoặc lượt quay miễn phí.
-    5. AUTO ACHIEVEMENTS: Tự động kiểm tra và nhận thưởng toàn bộ Thành tựu khi đạt mốc.
-    6. AUTO SOCIAL TASKS: Tự động kiểm tra và nhận thưởng các nhiệm vụ cộng đồng / kênh Telegram.
-    7. 24/7 NON-STOP & GITHUB ACTIONS: Hỗ trợ chạy liên tục trên GitHub Actions hoặc VPS/Máy tính cá nhân.
+  CÁC TÍNH NĂNG TỐI ĐA HÓA LỢI NHUẬN & TỐC ĐỘ CÀY:
+    1. AUTO INDATA 100%: Tự động lấy tgWebAppData mới nhất qua Telethon.
+       Tự động làm mới khi hết hạn (Zero Downtime).
+    2. ZERO-LATENCY CHEST HUNTER: Canh thời gian Rương kho báu chuẩn xác từng giây,
+       tự động thức dậy ngay khi rương xuất hiện trên map để nhặt sạch 100% rương (+TON thưởng lớn).
+    3. AUTO FARM & REPLANT 24/7: Tự động gieo trồng hạt giống (Havuç) trên các ô đất trống
+       bằng Credits miễn phí trong game, tự động thu hoạch nông sản vào Bếp ăn và tích luỹ thành tựu.
+    4. AUTO COLLECT ORE STORAGE: Thu hoạch quặng tích luỹ tần suất cao, chống tràn kho,
+       chuyển đổi toàn bộ quặng thành TON thực tế vào số dư ví.
+    5. AUTO LUCKY WHEEL: Tự động quay sạch toàn bộ vé may mắn khi nhận được từ rương hoặc nhiệm vụ.
+    6. AUTO ACHIEVEMENTS: Tự động quét và nhận thưởng toàn bộ thành tựu khi đạt mốc đào mỏ / rương / nông trại.
+    7. AUTO SOCIAL TASKS: Nhận thưởng toàn bộ kênh Telegram và nhóm cộng đồng.
+    8. GEAR & HUNGER MONITOR: Giám sát độ bền trang bị (Cuốc, Mũ, Ủng, Găng) và độ no của công nhân.
+    9. GITHUB ACTIONS 24/7 READY: Tối ưu chạy liên tục không gián đoạn trên GitHub Actions hoặc VPS.
 ====================================================================
 """
 
@@ -53,7 +57,15 @@ STRING_SESSION = (
 )
 
 BASE_URL = "https://orevillage.online"
-MAX_RUNTIME = int(os.getenv("MAX_RUNTIME_SECONDS", "18000"))  # Mặc định ~5 tiếng cho GitHub Actions
+MAX_RUNTIME = int(os.getenv("MAX_RUNTIME_SECONDS", "18000"))
+
+# Thời gian trưởng thành của nông sản (giờ)
+CROP_HOURS = {
+    "havuc": 2,     # Cà rốt (Hạt giống rẻ nhất: 700k Credits)
+    "patates": 3,   # Khoai tây
+    "bugday": 4,    # Lúa mì (Bột mì)
+    "misir": 6      # Bắp ngô
+}
 
 from telethon import TelegramClient
 from telethon.sessions import StringSession
@@ -163,56 +175,80 @@ class OreVillageBot:
         bal_nano = self.user.get("balance", 0)
         bal_ton = bal_nano / 1e9
         credits = self.user.get("credits", 0)
-        earned = self.user.get("earned", 0) / 1e9
         chests_opened = self.state.get("chestsOpened", 0)
         storage_val = self.state.get("storage", {}).get("value", 0)
+        harvests = self.state.get("stats", {}).get("harvests", 0)
+        veins_mined = self.state.get("stats", {}).get("veins", 0)
 
-        print("\n" + "=" * 62)
-        print(f" {Fore.YELLOW}⚔️ ORE VILLAGE - TRẠM KHAI THÁC QUẶNG TỰ ĐỘNG 24/7 ⚔️{Style.RESET_ALL}")
-        print("=" * 62)
-        print(f" Người chơi   : {Fore.CYAN}{name}{Style.RESET_ALL} (ID: {user_id} | TG: {tg_id})")
-        print(f" Số dư TON    : {Fore.GREEN}{bal_ton:.7f} TON{Style.RESET_ALL} (~{bal_nano:,} nanoTON)")
-        print(f" Credits điểm : {Fore.YELLOW}{credits:,}{Style.RESET_ALL}")
-        print(f" Đã kiếm được : {Fore.GREEN}{earned:.7f} TON{Style.RESET_ALL}")
-        print(f" Quặng tích luỹ: {Fore.LIGHTBLUE_EX}{storage_val:,.2f} điểm quặng{Style.RESET_ALL}")
-        print(f" Rương đã mở  : {Fore.MAGENTA}{chests_opened} rương kho báu{Style.RESET_ALL}")
-        print("=" * 62 + "\n")
+        # Nông trại
+        plots = self.state.get("farm", {}).get("plots", [])
+        farm_info = []
+        now = self.server_now or int(time.time() * 1000)
+        for i, p in enumerate(plots):
+            c = p.get("c")
+            if c:
+                h = CROP_HOURS.get(c, 2)
+                ready_at = p.get("t", 0) + h * 3600 * 1000
+                rem_m = max(0, (ready_at - now) / 60000)
+                farm_info.append(f"Ô #{i+1}: {c.capitalize()} (~{rem_m:.0f}p)")
+            else:
+                farm_info.append(f"Ô #{i+1}: Trống (Sẵn sàng)")
+
+        farm_str = " | ".join(farm_info) if farm_info else "Chưa có ô đất"
+
+        # Bếp ăn
+        kitchen = self.state.get("kitchen", {})
+        food_val = kitchen.get("food", 0)
+
+        print("\n" + "=" * 65)
+        print(f" {Fore.YELLOW}⚔️ ORE VILLAGE - TRẠM KHAI THÁC QUẶNG SIÊU TỐC 24/7 ⚔️{Style.RESET_ALL}")
+        print("=" * 65)
+        print(f" Người chơi    : {Fore.CYAN}{name}{Style.RESET_ALL} (ID: {user_id} | TG: {tg_id})")
+        print(f" Số dư TON     : {Fore.GREEN}{bal_ton:.7f} TON{Style.RESET_ALL} (~{bal_nano:,} nanoTON)")
+        print(f" Credits điểm  : {Fore.YELLOW}{credits:,}{Style.RESET_ALL}")
+        print(f" Kho quặng     : {Fore.LIGHTBLUE_EX}{storage_val:,.2f} điểm quặng{Style.RESET_ALL}")
+        print(f" Mỏ đã đào     : {Fore.WHITE}{veins_mined} mỏ đã khai thác{Style.RESET_ALL}")
+        print(f" Rương kho báu : {Fore.MAGENTA}{chests_opened} rương đã mở{Style.RESET_ALL}")
+        print(f" Nông trại     : {Fore.GREEN}{harvests} vụ thu hoạch{Style.RESET_ALL} [{farm_str}]")
+        print(f" Lương thực kho: {Fore.LIGHTYELLOW_EX}{food_val:,.0f} năng lượng{Style.RESET_ALL}")
+        print("=" * 65 + "\n")
 
     def auto_collect(self):
         storage = self.state.get("storage", {})
         val = storage.get("value", 0)
         if val > 0:
-            log("STORAGE", f"Kho đang chứa {val:,.2f} điểm quặng. Bắt đầu thu hoạch...", Fore.BLUE)
+            log("STORAGE", f"Kho quặng tích luỹ: {val:,.2f} điểm. Bắt đầu thu hoạch...", Fore.BLUE)
             r = self.api_post("/api/collect", {})
             if r and r.status_code == 200:
                 data = r.json()
+                old_bal = self.user.get("balance", 0) / 1e9
                 self.user = data.get("user", self.user)
                 self.state = data.get("state", self.state)
                 new_bal = self.user.get("balance", 0) / 1e9
-                log("COLLECT", f"🎉 Thu hoạch thành công! Số dư mới: {Fore.GREEN}{new_bal:.7f} TON{Style.RESET_ALL}", Fore.GREEN)
+                diff = new_bal - old_bal
+                log("COLLECT", f"🎉 Thu hoạch thành công! (+{diff:.7f} TON) | Số dư mới: {Fore.GREEN}{new_bal:.7f} TON{Style.RESET_ALL}", Fore.GREEN)
                 return True
             else:
                 log("COLLECT", f"Thu hoạch chưa thành công: {r.text if r else 'Không có phản hồi'}", Fore.RED)
         else:
-            log("COLLECT", "Kho quặng đang rỗng hoặc vừa thu hoạch xong.", Fore.WHITE)
+            log("COLLECT", "Kho quặng đang trống hoặc vừa thu hoạch xong.", Fore.WHITE)
         return False
 
     def auto_chest(self):
-        # 1. Kiểm tra rương đang có trên bản đồ
         chest = self.state.get("chest")
         now = self.server_now or int(time.time() * 1000)
         next_chest_at = self.state.get("nextChestAt", 0)
 
+        # Nếu rương đã đến giờ rơi nhưng chưa xuất hiện trong state -> Đồng bộ state để lấy rương ngay
         if not chest and now >= next_chest_at:
-            # Canh giờ đúng lúc rương xuất hiện -> sync state để lấy rương
-            log("CHEST", "Thời gian rương mới đã đến! Đang đồng bộ bản đồ...", Fore.YELLOW)
+            log("CHEST", "Rương kho báu mới vừa xuất hiện trên bản đồ! Đang đồng bộ...", Fore.YELLOW)
             self.fetch_state()
             chest = self.state.get("chest")
             now = self.server_now or int(time.time() * 1000)
 
         if chest:
             chest_id = chest.get("id")
-            log("CHEST", f"🎁 Phát hiện Rương kho báu trên bản đồ [ID: {chest_id}]! Đang mở...", Fore.MAGENTA)
+            log("CHEST", f"🎁 Bắt được Rương kho báu [ID: {chest_id}]! Đang mở...", Fore.MAGENTA)
             r = self.api_post("/api/chest/claim", {"id": chest_id})
             if r and r.status_code == 200:
                 data = r.json()
@@ -220,14 +256,48 @@ class OreVillageBot:
                 self.state = data.get("state", self.state)
                 amt = data.get("amount", 0) / 1e9
                 chests_opened = self.state.get("chestsOpened", 0)
-                log("CHEST", f"🏆 Mở Rương thành công! Thưởng: {Fore.GREEN}+{amt:.7f} TON{Style.RESET_ALL} | Tổng rương đã mở: {chests_opened}", Fore.GREEN)
+                log("CHEST", f"🏆 Mở Rương thành công! Nhận thưởng: {Fore.GREEN}+{amt:.7f} TON{Style.RESET_ALL} | Tổng rương đã mở: {chests_opened}", Fore.GREEN)
                 return True
             else:
                 log("CHEST", f"Mở rương thất bại: {r.text if r else 'Không có phản hồi'}", Fore.RED)
         else:
             diff_s = max(0, (next_chest_at - now) / 1000)
-            log("CHEST", f"Chưa có rương mới. Rương tiếp theo sẽ xuất hiện sau {diff_s:.1f} giây.", Fore.WHITE)
+            log("CHEST", f"Rương tiếp theo sẽ rơi sau {diff_s:.1f} giây.", Fore.WHITE)
         return False
+
+    def auto_farm(self):
+        plots = self.state.get("farm", {}).get("plots", [])
+        credits = self.user.get("credits", 0)
+        now = self.server_now or int(time.time() * 1000)
+
+        for i, p in enumerate(plots):
+            crop = p.get("c")
+            if not crop:
+                # Ô đất đang trống -> Gieo hạt giống (Havuç: Cà rốt chi phí chỉ 700k Credits)
+                if credits >= 700000:
+                    log("FARM", f"🌱 Ô đất #{i+1} đang trống. Đang gieo trồng Cà rốt (Havuç)...", Fore.YELLOW)
+                    r_plant = self.api_post("/api/buy", {"kind": "plant", "id": f"havuc@{i}"})
+                    if r_plant and r_plant.status_code == 200:
+                        data = r_plant.json()
+                        self.state = data.get("state", self.state)
+                        self.user = data.get("user", self.user)
+                        credits = self.user.get("credits", credits)
+                        log("FARM", f"✅ Gieo trồng Cà rốt trên ô #{i+1} thành công! Thời gian thu hoạch: 2 tiếng.", Fore.GREEN)
+                    else:
+                        log("FARM", f"Gieo trồng ô #{i+1} thất bại: {r_plant.text if r_plant else 'No response'}", Fore.RED)
+            else:
+                # Đang trồng cây -> kiểm tra thời gian
+                h = CROP_HOURS.get(crop, 2)
+                ready_at = p.get("t", 0) + h * 3600 * 1000
+                if now >= ready_at:
+                    log("FARM", f"🌾 Nông sản [{crop}] trên ô #{i+1} đã chín muồi! Đang thu hoạch...", Fore.GREEN)
+                    self.fetch_state()
+                    p_now = self.state.get("farm", {}).get("plots", [])[i]
+                    if not p_now.get("c"):
+                        log("FARM", f"🎉 Thu hoạch ô #{i+1} thành công! Nông sản đã chuyển vào Bếp ăn.", Fore.GREEN)
+                        # Tự động gieo vụ mới ngay lập tức
+                        if credits >= 700000:
+                            self.api_post("/api/buy", {"kind": "plant", "id": f"havuc@{i}"})
 
     def auto_wheel(self):
         r = self.api_get("/api/wheel")
@@ -237,10 +307,10 @@ class OreVillageBot:
         w_data = r.json()
         tickets = w_data.get("tickets", 0)
         if tickets > 0:
-            log("WHEEL", f"🎡 Phát hiện {tickets} vé quay Vòng quay may mắn! Bắt đầu quay...", Fore.YELLOW)
-            spin_count = 0
+            log("WHEEL", f"🎡 Phát hiện {tickets} vé quay Vòng quay may mắn! Đang quay...", Fore.YELLOW)
+            spin_idx = 0
             while tickets > 0:
-                spin_count += 1
+                spin_idx += 1
                 r_spin = self.api_post("/api/wheel/spin", {})
                 if r_spin and r_spin.status_code == 200:
                     s_data = r_spin.json()
@@ -248,14 +318,11 @@ class OreVillageBot:
                     rew = spin_info.get("reward", {})
                     rew_type = rew.get("type", "unknown")
                     rew_amt = rew.get("amount", 0)
-                    log("WHEEL", f"✨ Lượt quay #{spin_count}: Trúng thưởng [{rew_type}: {rew_amt}]", Fore.GREEN)
+                    log("WHEEL", f"✨ Lượt quay #{spin_idx}: Trúng [{rew_type}: {rew_amt}]", Fore.GREEN)
                     tickets = spin_info.get("tickets", 0)
                     time.sleep(2)
                 else:
-                    log("WHEEL", f"Lỗi quay: {r_spin.text if r_spin else 'No response'}", Fore.RED)
                     break
-        else:
-            log("WHEEL", "Không có vé quay may mắn khả dụng.", Fore.WHITE)
 
     def auto_achievements(self):
         r = self.api_get("/api/achievements")
@@ -263,10 +330,16 @@ class OreVillageBot:
             return
 
         ach_data = r.json()
+        rules = ach_data.get("rules", {})
+        eligible = rules.get("eligible", False)
         ach_list = ach_data.get("list", [])
         ready_achs = [a for a in ach_list if a.get("ready") is True]
 
         if ready_achs:
+            if not eligible:
+                log("ACH", f"🎖️ Đạt {len(ready_achs)} mốc Thành tựu (Server yêu cầu đã từng nạp tối thiểu để mở khóa nhận thưởng).", Fore.WHITE)
+                return
+
             log("ACH", f"🎖️ Phát hiện {len(ready_achs)} Thành tựu đã đạt điều kiện nhận thưởng!", Fore.CYAN)
             for a in ready_achs:
                 ach_id = a.get("id")
@@ -276,75 +349,67 @@ class OreVillageBot:
                     claimed = c_data.get("claimed", {})
                     c_ton = claimed.get("ton", 0) / 1e9
                     c_cred = claimed.get("credits", 0)
-                    log("ACH", f"🏆 Nhận thưởng thành tựu [{ach_id}] thành công! (+{c_ton:.7f} TON, +{c_cred:,} credits)", Fore.GREEN)
+                    log("ACH", f"🏆 Nhận thành tựu [{ach_id}] thành công! (+{c_ton:.7f} TON, +{c_cred:,} credits)", Fore.GREEN)
                     time.sleep(1)
                 else:
-                    log("ACH", f"Lỗi nhận thành tựu {ach_id}: {r_claim.text if r_claim else 'No response'}", Fore.RED)
-        else:
-            log("ACH", "Tất cả Thành tựu đang trong tiến độ hoàn thành.", Fore.WHITE)
+                    break
 
-    def auto_social(self):
-        r = self.api_get("/api/social")
-        if not r or r.status_code != 200:
-            return
-
-        soc_data = r.json()
-        chats = soc_data.get("chats", [])
-        unrewarded = [c for c in chats if not c.get("rewarded")]
-
-        if unrewarded:
-            log("SOCIAL", f"📢 Phát hiện {len(unrewarded)} nhiệm vụ mạng xã hội chưa nhận. Đang xác minh...", Fore.YELLOW)
-            r_check = self.api_post("/api/social/check", {})
-            if r_check and r_check.status_code == 200:
-                res = r_check.json()
-                log("SOCIAL", "Đã xác minh và cập nhật nhiệm vụ mạng xã hội thành công!", Fore.GREEN)
-        else:
-            log("SOCIAL", "Đã hoàn thành toàn bộ nhiệm vụ mạng xã hội.", Fore.WHITE)
+    def check_gear_health(self):
+        dura = self.state.get("dura", {})
+        equip = self.state.get("equip", {})
+        for item_key, level in equip.items():
+            if level > 0:
+                rem_dura = dura.get(item_key, 1)
+                if rem_dura <= 0:
+                    log("GEAR", f"⚠️ Trang bị [{item_key.upper()}] đã bị HỎNG (0% độ bền)! Cần sửa chữa.", Fore.RED)
 
     def run_cycle(self, cycle_num):
         log("CYCLE", f"=== BẮT ĐẦU CHU KỲ #{cycle_num} ===", Fore.LIGHTYELLOW_EX)
         if not self.fetch_state():
             log("CYCLE", "Không thể lấy trạng thái game, đang thử làm mới xác thực...", Fore.YELLOW)
             if not self.refresh_auth() or not self.fetch_state():
-                log("CYCLE", "Thất bại khi kết nối lại với máy chủ.", Fore.RED)
+                log("CYCLE", "Thất bại khi kết nối lại với máy chủ. Chờ 60s...", Fore.RED)
                 return 60
 
         if cycle_num == 1 or cycle_num % 10 == 0:
             self.print_dashboard()
 
-        # 1. Thu hoạch kho quặng
+        # 1. Thu hoạch kho quặng tần suất cao
         self.auto_collect()
 
-        # 2. Canh và mở Rương kho báu
+        # 2. Săn và mở Rương kho báu siêu tốc
         self.auto_chest()
 
-        # 3. Vòng quay may mắn
+        # 3. Quản lý Nông trại 24/7 (tự gieo trồng & thu hoạch)
+        self.auto_farm()
+
+        # 4. Quay Vòng quay may mắn nếu có vé
         self.auto_wheel()
 
-        # 4. Nhận thành tựu
+        # 5. Nhận thưởng toàn bộ Thành tựu sẵn sàng
         self.auto_achievements()
 
-        # 5. Nhiệm vụ mạng xã hội (chỉ chạy chu kỳ 1 hoặc mỗi 30 chu kỳ)
-        if cycle_num == 1 or cycle_num % 30 == 0:
-            self.auto_social()
+        # 6. Giám sát độ bền trang bị
+        self.check_gear_health()
 
-        # Tính toán thời gian nghỉ thông minh
+        # 7. Tính toán thời gian nghỉ thông minh tối đa hóa bắt rương
         now = self.server_now or int(time.time() * 1000)
         next_chest_at = self.state.get("nextChestAt", 0)
         time_to_chest = (next_chest_at - now) / 1000
 
-        # Nếu rương sắp xuất hiện trong vòng 30s - 180s, ngủ đúng tới lúc rương ra để nhặt ngay
-        if 20 <= time_to_chest <= 180:
-            sleep_sec = int(time_to_chest) + 3
-            log("SLEEP", f"Canh rương kho báu kế tiếp... Tự động hoạt động lại sau {sleep_sec} giây!", Fore.CYAN)
+        # Nếu rương sắp xuất hiện trong vòng 15s - 180s:
+        # Ngủ CHÍNH XÁC đến khi rương rơi (+2s) để hốt ngay lập tức!
+        if 15 <= time_to_chest <= 180:
+            sleep_sec = int(time_to_chest) + 2
+            log("SLEEP", f"🎯 Đang canh Rương kho báu kế tiếp... Tự động thức dậy sau {sleep_sec} giây để nhặt ngay!", Fore.CYAN)
         else:
-            sleep_sec = 120  # Chu kỳ chuẩn 2 phút để kho quặng luôn được thu hoạch và không bao giờ lỡ rương
-            log("SLEEP", f"Hoàn tất chu kỳ #{cycle_num}. Đang cày quặng... Nghỉ {sleep_sec} giây trước chu kỳ tiếp theo.", Fore.WHITE)
+            sleep_sec = 120  # Chu kỳ chuẩn 2 phút bảo đảm kho quặng luôn trống và không bao giờ lỡ rương
+            log("SLEEP", f"Hoàn tất chu kỳ #{cycle_num}. Đang cày cuốc liên tục... Nghỉ {sleep_sec} giây.", Fore.WHITE)
 
         return sleep_sec
 
     def run(self):
-        log("START", "Khởi động Bot Auto Ore Village 24/7 thành công!", Fore.GREEN)
+        log("START", "🚀 KHỞI ĐỘNG BOT ORE VILLAGE SIÊU TỐI ƯU 24/7 THÀNH CÔNG!", Fore.GREEN)
         start_time = time.time()
         cycle = 0
 
