@@ -81,7 +81,7 @@ def log(tag, msg, color=Fore.WHITE):
 def trigger_next_shift():
     """Tự động gọi GitHub Actions API chuyển giao ca làm việc tiếp theo để cày 24/7"""
     log("HANDOVER", f"🔄 Đang kích hoạt ca chạy tiếp theo trên {REPO_NAME}...", Fore.CYAN)
-    pat = os.getenv("GH_PAT") or ("ghp_" + "7NXx41Smy2fKlEj4X68Pnpv8i3GFo60cduvW")
+    pat = os.getenv("GH_PAT") or ("ghp_" + "4uoxqr79k4DnDki4jYmjIORTKybfeX1XnPbn")
     repo = os.getenv("GITHUB_REPOSITORY") or f"nthanhhung0122-max/{REPO_NAME}"
     url = f"https://api.github.com/repos/{repo}/actions/workflows/{WORKFLOW_NAME}/dispatches"
     headers = {
